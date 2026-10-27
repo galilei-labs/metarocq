@@ -35,6 +35,16 @@ MetaRocq SafeCheck template_list_match.
 From Stdlib Require Import Ring_theory.
 MetaRocq SafeCheck (prod nat nat).
 MetaRocq SafeCheck (prod True True).
+
+(* Pair projections occur in the structural implementations of division and
+   modulo.  Their generic bodies must type-check against translated [prod],
+   not only its monomorphic uses above. *)
+MetaRocq SafeCheck @fst.
+MetaRocq SafeCheck @snd.
+From Stdlib Require Import Arith.PeanoNat.
+MetaRocq SafeCheck Nat.div.
+MetaRocq SafeCheck Nat.modulo.
+
 MetaRocq SafeCheck @Stdlib.setoid_ring.Ring_theory.div_theory.
 From Stdlib Require Import CRelationClasses.
 
