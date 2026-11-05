@@ -43,8 +43,69 @@ Definition cmp_universe_variance (cmp_univ : conv_pb -> Universe.t -> Universe.t
 Definition cmp_universe_instance_variance cmp_univ pb v u u' :=
   Forall3 (cmp_universe_variance cmp_univ pb) v u u'.
 
-Definition global_variance_gen lookup gr napp :=
+(** Only the universe arity is relevant to primitive recognition. Binder names
+    carry no semantic information, and template translation may add constraints.
+    Those constraints are still checked by ordinary instance consistency. *)
+Definition array_universes_shape (u : universes_decl) : universes_decl :=
+  match u with
+  | Monomorphic_ctx => Monomorphic_ctx
+  | Polymorphic_ctx (names, _) =>
+    Polymorphic_ctx (map (fun _ => nAnon) names, ConstraintSet.empty)
+  end.
+
+Definition primitive_array_invariants (decl : constant_body) :=
+  let s := sType (Universe.make' (Level.lvar 0)) in
+  [/\ decl.(cst_type) = tImpl (tSort s) (tSort s),
+      decl.(cst_body) = None &
+      array_universes_shape decl.(cst_universes) = Polymorphic_ctx array_uctx].
+
+(** Registration alone does not imply [primitive_invariants]: in PCUIC these
+    are hypotheses of primitive-value typing, not of global well-formedness.
+    Check the declaration as well, so that the conversion exception cannot
+    accidentally apply to an arbitrary registered constant. *)
+Definition primitive_arrayb_gen lookup (array : option kername) c :=
+  match array, lookup c with
+  | Some array, Some (ConstantDecl decl) =>
+    (array == c) &&
+    (decl.(cst_body) == None) &&
+    (array_universes_shape decl.(cst_universes) == Polymorphic_ctx array_uctx) &&
+    (decl.(cst_type) ==
+      let s := sType (Universe.make' (Level.lvar 0)) in
+      tImpl (tSort s) (tSort s))
+  | _, _ => false
+  end.
+
+Notation primitive_arrayb Σ :=
+  (primitive_arrayb_gen (lookup_env Σ) (primitive_constant Σ primArray)).
+
+Lemma primitive_arrayb_gen_spec lookup array c :
+  reflect (array = Some c /\
+    exists decl, lookup c = Some (ConstantDecl decl) /\
+      primitive_array_invariants decl)
+    (primitive_arrayb_gen lookup array c).
+Proof.
+  apply iff_reflect.
+  unfold primitive_arrayb_gen.
+  destruct array as [a|]; destruct (lookup c) as [[decl|mdecl]|]; cbn;
+    try (split; [intros [? [d [? ?]]]; congruence | discriminate]).
+  case: (ReflectEq.eqb_spec a c) => ha;
+  case: (ReflectEq.eqb_spec decl.(cst_body) None) => hb;
+  case: (ReflectEq.eqb_spec (array_universes_shape decl.(cst_universes)) (Polymorphic_ctx array_uctx)) => hu;
+  case: (ReflectEq.eqb_spec decl.(cst_type)
+    (let s := sType (Universe.make' (Level.lvar 0)) in
+      tImpl (tSort s) (tSort s))) => ht; cbn; split.
+  all: try (intros [h [d [hd [hdt hdb hdu]]]];
+    inversion h; inversion hd; subst; congruence).
+  all: try discriminate.
+  intros _. split; [congruence |]. exists decl.
+  split; [reflexivity |]. constructor; assumption.
+Qed.
+
+Definition global_variance_gen lookup array gr napp :=
   match gr with
+  | ConstRef c =>
+    if primitive_arrayb_gen lookup array c && (0 <? napp)
+    then AllIrrelevant else AllEqual
   | IndRef ind =>
     match lookup_inductive_gen lookup ind with
     | Some (mdecl, idecl) =>
@@ -73,7 +134,8 @@ Definition global_variance_gen lookup gr napp :=
   | _ => AllEqual
   end.
 
-Notation global_variance Σ := (global_variance_gen (lookup_env Σ)).
+Notation global_variance Σ :=
+  (global_variance_gen (lookup_env Σ) (primitive_constant Σ primArray)).
 
 Definition cmp_opt_variance cmp_univ pb v :=
   match v with
@@ -162,10 +224,11 @@ Proof.
     + eapply @Forall3_Forall2_left with (Q := fun _ _ => True); eauto.
 Qed.
 
-Definition cmp_global_instance_gen Σ cmp_universe pb gr napp :=
-  cmp_opt_variance cmp_universe pb (global_variance_gen Σ gr napp).
+Definition cmp_global_instance_gen lookup array cmp_universe pb gr napp :=
+  cmp_opt_variance cmp_universe pb (global_variance_gen lookup array gr napp).
 
-Notation cmp_global_instance Σ := (cmp_global_instance_gen (lookup_env Σ)).
+Notation cmp_global_instance Σ :=
+  (cmp_global_instance_gen (lookup_env Σ) (primitive_constant Σ primArray)).
 
 Definition cmp_ind_universes {cf:checker_flags} (Σ : global_env_ext) ind n i i' :=
   cmp_global_instance Σ (compare_universe (global_ext_constraints Σ)) Cumul (IndRef ind) n i i'.
@@ -423,7 +486,7 @@ Inductive eq_term_upto_univ_napp Σ
     Σ ⊢ tApp t u <==[ pb , napp ] tApp t' u'
 
 | eq_Const : forall c u u',
-    cmp_universe_instance (cmp_universe Conv) u u' ->
+    cmp_global_instance Σ cmp_universe pb (ConstRef c) napp u u' ->
     Σ ⊢ tConst c u <==[ pb , napp ] tConst c u'
 
 | eq_Ind : forall i u u',
@@ -1012,6 +1075,9 @@ Proof.
   intros hnapp.
   rewrite /global_variance_gen.
   destruct gr => //=.
+  - destruct primitive_arrayb_gen => //=.
+    elim: Nat.ltb_spec => // hn.
+    elim: Nat.ltb_spec => //. lia.
   - destruct lookup_inductive_gen as [[mdecl idec]|] => //=.
     destruct destArity as [[ctx s]|] => //=.
     elim: Nat.leb_spec => // cass.
@@ -1060,6 +1126,8 @@ Qed.
 Lemma global_variance_empty gr napp env : env.(declarations) = [] -> global_variance env gr napp = AllEqual.
 Proof.
   destruct env; cbn => ->. destruct gr; auto.
+  cbn [global_variance_gen primitive_arrayb_gen lookup_env lookup_global].
+  destruct (Retroknowledge.retro_array retroknowledge0); reflexivity.
 Qed.
 
 (** Pure syntactic equality, without cumulative inductive types subtyping *)
@@ -1110,6 +1178,8 @@ Proof.
     eapply cmp_global_instance_impl. 4:eauto. all:auto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_impl. 4:eauto. all:eauto.
+  - inversion 1; subst; constructor.
+    eapply cmp_global_instance_impl. 4:eauto. all:eauto.
   - inversion 1; subst; constructor; unfold eq_predicate, eq_branches, eq_branch in *; eauto; solve_all.
     * eapply cmp_universe_instance_impl'; eauto.
   - inversion 1; subst; constructor.
@@ -1141,6 +1211,8 @@ Proof.
     eapply All_impl; eauto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_empty_impl. 2:eauto. all:auto.
+  - inversion 1; subst; constructor.
+    eapply cmp_global_instance_empty_impl. 2:eauto. all:eauto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_empty_impl. 2:eauto. all:eauto.
   - inversion 1; subst; constructor; unfold eq_predicate, eq_branches, eq_branch in *; eauto; solve_all.
@@ -1898,6 +1970,8 @@ Proof.
   - inversion 1; subst; constructor. now eapply sort_sub_pb.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_flip. 3:eauto. all:auto.
+  - inversion 1; subst; constructor.
+    eapply cmp_global_instance_flip. 3:eauto. all:eauto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_flip. 3:eauto. all:eauto.
   - inversion 1; subst; constructor; unfold eq_predicate, eq_branches, eq_branch in *; eauto.

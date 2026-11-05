@@ -806,7 +806,36 @@ Proof.
   eapply eq_context_upto_univ_subst_instance; tc. tea.
 Qed.*)
 
-Lemma red1_eq_term_upto_univ_l {Σ Σ' : global_env} cmp_universe cmp_sort pb napp Γ u v u' :
+(* Equality may ignore array instances only for bodyless primitive declarations.
+   When reduction and equality use different environments, this fact must be
+   compatible across the two environments. *)
+Class array_reduction_compatible (Σ Σ' : global_env) : Prop := {
+  array_reduction_compatible_body : forall c decl body,
+    declared_constant Σ c decl -> cst_body decl = Some body ->
+    primitive_arrayb Σ' c = false
+}.
+
+Lemma array_reduction_compatible_refl {cf : checker_flags} Σ (wfΣ : wf Σ) :
+  array_reduction_compatible Σ Σ.
+Proof.
+  constructor. intros c decl body hd hb.
+  destruct (primitive_arrayb_gen_spec (lookup_env Σ)
+    (primitive_constant Σ primArray) c) as [[_ [decl' [hl inv]]]|hn]; auto.
+  destruct inv as [_ hb' _].
+  have hd' : lookup_env Σ c = Some (ConstantDecl decl).
+  { exact (@declared_constant_to_gen cf _ _ Σ c decl wfΣ hd). }
+  rewrite hd' in hl. inversion hl; subst.
+  congruence.
+Qed.
+
+#[global] Hint Resolve array_reduction_compatible_refl : core.
+#[global] Hint Extern 1 (array_reduction_compatible _ _) =>
+  match goal with
+  | h : wf _ |- _ => exact (array_reduction_compatible_refl _ h)
+  end : typeclass_instances.
+
+Lemma red1_eq_term_upto_univ_l {Σ Σ' : global_env}
+  {hcompat : array_reduction_compatible Σ Σ'} cmp_universe cmp_sort pb napp Γ u v u' :
   RelationClasses.PreOrder (cmp_universe Conv) ->
   RelationClasses.PreOrder (cmp_universe pb) ->
   RelationClasses.PreOrder (cmp_sort Conv) ->
@@ -998,6 +1027,9 @@ Proof.
       * constructor ; eauto.
         constructor. assumption.
   - dependent destruction e.
+    have ha := array_reduction_compatible_body c decl body H H0.
+    unfold cmp_global_instance_gen, global_variance_gen in c1.
+    rewrite ha in c1. cbn in c1.
     eexists. split.
     + econstructor. all: eauto.
     + eapply (eq_term_upto_univ_leq _ _ _ _ 0); tas. auto. auto with arith.
@@ -1434,7 +1466,8 @@ Proof.
   - intros x y z  r r'. eapply H. all: eassumption.
 Qed.
 
-Lemma red1_eq_term_upto_univ_r {Σ Σ' cmp_universe cmp_sort pb napp Γ u v u'} :
+Lemma red1_eq_term_upto_univ_r {Σ Σ' cmp_universe cmp_sort pb napp Γ u v u'}
+  {hcompat : array_reduction_compatible Σ Σ'} :
   RelationClasses.PreOrder (cmp_universe Conv) ->
   RelationClasses.PreOrder (cmp_universe pb) ->
   RelationClasses.PreOrder (cmp_sort Conv) ->
@@ -1450,7 +1483,7 @@ Lemma red1_eq_term_upto_univ_r {Σ Σ' cmp_universe cmp_sort pb napp Γ u v u'} 
         eq_term_upto_univ_napp Σ' cmp_universe cmp_sort pb napp v' v.
 Proof.
   intros preorder_univ_conv preorder_sort_pb preorder_sort_conv preoder_sort_pb sub_univ sub_sort hsubst_univ hsubst_sort_conv hsubst_sort_pb h uv.
-  destruct (@red1_eq_term_upto_univ_l Σ Σ' (fun pb => flip (cmp_universe pb)) (fun pb => flip (cmp_sort pb)) pb napp Γ u v u') as (v' & r & e).
+  destruct (@red1_eq_term_upto_univ_l Σ Σ' hcompat (fun pb => flip (cmp_universe pb)) (fun pb => flip (cmp_sort pb)) pb napp Γ u v u') as (v' & r & e).
   all: eauto using flip_PreOrder.
   1,2: intros ??; unfold flip; cbn; eauto.
   - red. intros s u1 u2 ru.
@@ -1480,7 +1513,8 @@ Section RedEq.
           {hsubst_sort_conv   : SubstUnivPreserving (cmp_universe Conv) (cmp_sort Conv)}
           {hsubst_sort_pb     : SubstUnivPreserving (cmp_universe Conv) (cmp_sort pb)}.
 
-  Lemma red_eq_term_upto_univ_l {Σ' Γ u v u'} :
+  Lemma red_eq_term_upto_univ_l {Σ' Γ u v u'}
+    {hcompat : array_reduction_compatible Σ Σ'} :
     eq_term_upto_univ Σ' cmp_universe cmp_sort pb u u' ->
     red Σ Γ u v ->
     ∑ v',
@@ -1496,7 +1530,8 @@ Section RedEq.
       now transitivity T'.
   Qed.
 
-  Lemma red_eq_term_upto_univ_r {Σ' Γ u v u'} :
+  Lemma red_eq_term_upto_univ_r {Σ' Γ u v u'}
+    {hcompat : array_reduction_compatible Σ Σ'} :
     eq_term_upto_univ Σ' cmp_universe cmp_sort pb u' u ->
     red Σ Γ u v ->
     ∑ v', red Σ Γ u' v' * eq_term_upto_univ Σ' cmp_universe cmp_sort pb v' v.
@@ -1514,6 +1549,7 @@ End RedEq.
 
 Section RedEqContext.
   Context (Σ : global_env_ext).
+  Context {hcompat : array_reduction_compatible Σ Σ}.
   Context {cmp_universe : conv_pb -> Universe.t -> Universe.t -> Prop} {cmp_sort : conv_pb -> sort -> sort -> Prop} {pb : conv_pb}
           {preorder_univ_conv : RelationClasses.PreOrder (cmp_universe Conv)}
           {preorder_univ_pb   : RelationClasses.PreOrder (cmp_universe pb)}
@@ -1531,7 +1567,7 @@ Section RedEqContext.
     ∑ v',
     red Σ Δ u v' *
     eq_term_upto_univ Σ cmp_universe cmp_sort Conv v v'.
-  Proof using preorder_univ_conv preorder_univ_pb preorder_sort_conv preorder_sort_conv preorder_sort_pb sub_univ sub_sort hsubst_univ hsubst_sort_conv hsubst_sort_pb.
+  Proof using hcompat preorder_univ_conv preorder_univ_pb preorder_sort_conv preorder_sort_conv preorder_sort_pb sub_univ sub_sort hsubst_univ hsubst_sort_conv hsubst_sort_pb.
     intros eq r.
     induction r.
     - eapply red1_eq_context_upto_l in eq as [v' [r' eq']]; eauto; tc.
@@ -1550,7 +1586,7 @@ Section RedEqContext.
     ∑ v',
     red Σ Δ u v' *
     eq_term_upto_univ Σ cmp_universe cmp_sort Conv v' v.
-  Proof using preorder_univ_conv preorder_univ_pb preorder_sort_conv preorder_sort_conv preorder_sort_pb sub_univ sub_sort hsubst_univ hsubst_sort_conv hsubst_sort_pb.
+  Proof using hcompat preorder_univ_conv preorder_univ_pb preorder_sort_conv preorder_sort_conv preorder_sort_pb sub_univ sub_sort hsubst_univ hsubst_sort_conv hsubst_sort_pb.
     intros eq r.
     induction r.
     - eapply red1_eq_context_upto_r in eq as [v' [r' eq']]; eauto; tc.

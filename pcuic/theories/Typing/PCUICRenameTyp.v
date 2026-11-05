@@ -436,7 +436,11 @@ Proof.
       eapply All2_impl. 1: tea. cbn; intros.
       destruct_head'_prod; eauto.
   - eapply cumul_Sort; eauto.
-  - eapply cumul_Const; eauto.
+  - repeat rewrite rename_mkApps. eapply cumul_Const.
+    * repeat rewrite length_map; eauto.
+    * inv_on_free_vars. repeat toAll.
+      eapply All2_impl. 1: tea. cbn; intros.
+      destruct_head'_prod; eauto.
 Defined.
 
 Lemma convSpec_renameP P Σ Γ Δ f A B : let sP := shiftnP #|Γ| P in

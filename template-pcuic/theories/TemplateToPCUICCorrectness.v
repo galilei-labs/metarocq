@@ -677,6 +677,32 @@ End Translation.
 
 (* Derive Signature for Typing.on_global_env. *)
 
+Lemma trans_env_retroknowledge Σ : retroknowledge (trans_global_env Σ) = S.Env.retroknowledge Σ.
+Proof.
+  destruct Σ as [univs decls retro].
+  rewrite /trans_global_env /=.
+  induction decls; cbn; auto.
+Qed.
+
+Lemma trans_primitive_arrayb {cf} Σ (wfΣ : Typing.wf Σ)
+  (wfΣ' : wf (trans_global_env Σ)) c :
+  SEq.primitive_arrayb Σ c -> primitive_arrayb (trans_global_env Σ) c.
+Proof.
+  intros ha.
+  have hs := SEq.primitive_arrayb_gen_spec (Ast.Env.lookup_env Σ)
+    (Ast.Env.primitive_constant Σ primArray) c.
+  rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+  destruct (primitive_arrayb_gen_spec (lookup_env (trans_global_env Σ))
+    (primitive_constant (trans_global_env Σ) primArray) c) as [h|h]; auto.
+  exfalso. apply h. split.
+  - unfold primitive_constant. rewrite trans_env_retroknowledge. exact reg.
+  - exists (trans_constant_body (trans_global_env Σ) decl). split.
+    + now rewrite (trans_lookup Σ c wfΣ wfΣ') look.
+    + destruct inv as [ht hb hu].
+      unfold primitive_array_invariants, trans_constant_body; cbn.
+      rewrite ht hb. repeat split; try reflexivity. exact hu.
+Qed.
+
 Section Trans_Global.
   Context {cf : checker_flags}.
   Context (Σ : Ast.Env.global_env).
@@ -803,6 +829,11 @@ Section Trans_Global.
   Proof.
     unfold SEq.cmp_global_instance, SEq.global_variance.
     destruct gref; simpl; auto.
+    - unfold cmp_global_instance_gen; cbn.
+      case ha: SEq.primitive_arrayb_gen.
+      + have ha' := trans_primitive_arrayb Σ wfΣ wfΣ' k ha.
+        rewrite ha' /=. trivial.
+      + cbn. apply cmp_instance_opt_variance.
     - unfold cmp_global_instance_gen, cmp_opt_variance; cbn.
       unfold Ast.lookup_inductive_gen, lookup_inductive_gen,
         Ast.lookup_minductive_gen, lookup_minductive_gen.
@@ -887,6 +918,7 @@ Section Trans_Global.
     - eapply eq_term_upto_univ_napp_mkApps.
       + rewrite length_map. now eapply IHt.
       + destruct wt, wu. solve_all.
+    - constructor. apply trans_cmp_global_instance; auto.
     - constructor. apply trans_cmp_global_instance; auto.
     - constructor. apply trans_cmp_global_instance; auto.
     - red in X, X0.
@@ -2227,13 +2259,6 @@ Lemma trans_wf_sort Σ u : S.wf_sort Σ u ->
 Proof.
   unfold S.wf_sort, wf_sort, S.wf_universe, wf_universe.
   now rewrite global_ext_levels_trans.
-Qed.
-
-Lemma trans_env_retroknowledge Σ : retroknowledge (trans_global_env Σ) = S.Env.retroknowledge Σ.
-Proof.
-  destruct Σ as [univs decls retro].
-  rewrite /trans_global_env /=.
-  induction decls; cbn; auto.
 Qed.
 
 Local Hint Resolve trans_wf_sort : trans.

@@ -130,6 +130,8 @@ Run_extractable
 
 Transform
 TemplateEnvMap
+EnvironmentReflect
+ReflectAst
 TermEquality
 Typing0
 TemplateProgram

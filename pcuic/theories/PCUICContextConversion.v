@@ -459,7 +459,7 @@ Section ContextConversion.
     compare_term Σ Σ pb u u' ->
     red Σ Γ u v ->
     ∑ v' : term, red Σ Γ u' v' × compare_term Σ Σ pb v v'.
-  Proof using Type.
+  Proof using Type wfΣ.
     destruct pb; cbn;
     apply red_eq_term_upto_univ_l; tc.
   Qed.
@@ -468,7 +468,7 @@ Section ContextConversion.
     compare_term Σ Σ pb u u' ->
     red Σ Γ u' v ->
     ∑ v' : term, red Σ Γ u v' × compare_term Σ Σ pb v' v.
-  Proof using Type.
+  Proof using Type wfΣ.
     destruct pb; cbn;
     apply red_eq_term_upto_univ_r; tc.
   Qed.
@@ -478,7 +478,7 @@ Section ContextConversion.
     compare_term Σ Σ pb u u' ->
     Σ ;;; Γ ⊢ u ⇝ v ->
     ∑ v' : term, Σ ;;; Γ ⊢ u' ⇝ v' × compare_term Σ Σ pb v v'.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros isop comp [clΓ clu red].
     destruct (red_compare_term_l comp red) as [nf [r eq]].
     exists nf; repeat (split; eauto with fvs).
@@ -489,7 +489,7 @@ Section ContextConversion.
     compare_term Σ Σ pb u u' ->
     Σ ;;; Γ ⊢ u' ⇝ v ->
     ∑ v' : term, Σ ;;; Γ ⊢ u ⇝ v' × compare_term Σ Σ pb v' v.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros isop comp [clΓ clu red].
     destruct (red_compare_term_r comp red) as [nf [r eq]].
     exists nf; repeat (split; eauto with fvs).
@@ -593,7 +593,7 @@ Section ContextConversion.
     Σ ;;; Γ ⊢ u ⇝ v ->
     compare_context Σ pb Γ Δ ->
     ∑ v', Σ ;;; Δ ⊢ u ⇝ v' × eq_term Σ Σ v v'.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros clΔ [onΓ onu r] c.
     destruct (red_eq_context_upto_l _ c r) as [nf [red eq]].
     exists nf. split; auto. split; eauto with fvs.
@@ -605,7 +605,7 @@ Section ContextConversion.
     Σ ;;; Δ ⊢ u ⇝ v ->
     compare_context Σ pb Γ Δ ->
     ∑ v', Σ ;;; Γ ⊢ u ⇝ v' × eq_term Σ Σ v v'.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros clΔ [onΓ onu r] c.
     destruct (red_eq_context_upto_r _ c r) as [nf [red eq]].
     symmetry in eq.
@@ -640,7 +640,7 @@ Section ContextConversion.
     compare_context Σ pb Γ Δ ->
     Σ ;;; Δ |- T <=[pb'] U ->
     Σ ;;; Γ |- T <=[pb'] U.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros eqctx cum.
     eapply cumul_alt in cum as (nf & nf' & redl & redr & ?).
     eapply red_eq_context_upto_r in redl; tea; tc.
@@ -664,7 +664,7 @@ Section ContextConversion.
     compare_context Σ pb Γ Δ ->
     Σ ;;; Γ |- T <=[pb'] U ->
     Σ ;;; Δ |- T <=[pb'] U.
-  Proof using Type.
+  Proof using Type wfΣ.
     intros eqctx cum.
     eapply cumul_alt in cum as (nf & nf' & redl & redr & ?).
     eapply red_eq_context_upto_l in redl; tea; tc.
@@ -683,7 +683,7 @@ Section ContextConversion.
     eq_context Σ Σ Γ Δ ->
     Σ ;;; Γ |- T = U ->
     Σ ;;; Δ |- T = U.
-  Proof using Type.
+  Proof using Type wfΣ.
     intro eqctx. symmetry in eqctx.
     now eapply cumul_pb_compare_context.
   Qed.
@@ -692,7 +692,7 @@ Section ContextConversion.
     leq_context Σ Σ Γ Δ ->
     Σ ;;; Δ |- T = U ->
     Σ ;;; Γ |- T = U.
-  Proof using Type.
+  Proof using Type wfΣ.
     apply cumul_pb_compare_context.
   Qed.
 
@@ -705,7 +705,7 @@ Section ContextConversion.
     leq_context Σ Σ Γ Δ ->
     Σ ;;; Γ |- T = U ->
     Σ ;;; Δ |- T = U.
-  Proof using Type.
+  Proof using Type wfΣ.
     apply cumul_pb_compare_context_inv.
   Qed.
 
@@ -713,7 +713,7 @@ Section ContextConversion.
     leq_context Σ Σ Δ Γ ->
     Σ ;;; Γ |- T <= U ->
     Σ ;;; Δ |- T <= U.
-  Proof using Type.
+  Proof using Type wfΣ.
     apply cumul_pb_compare_context.
   Qed.
 
@@ -768,7 +768,7 @@ Section ContextConversion.
     eq_context Σ Σ Γ Δ ->
     Σ ;;; Γ |- T <= U ->
     Σ ;;; Δ |- T <= U.
-  Proof using Type.
+  Proof using Type wfΣ.
     intro H. symmetry in H. revert H.
     apply cumul_pb_compare_context.
   Qed.

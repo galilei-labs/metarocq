@@ -139,9 +139,13 @@ Proof.
     * eapply All2_map. repeat toAll. eapply All2_impl. 1: tea. cbn; intros.
       eapply X0.2; eauto.
   - eapply cumul_Sort. now apply compare_sort_subst_instance.
-  - eapply cumul_Const. apply precompose_subst_instance.
-    eapply cmp_universe_instance_impl; eauto.
-    now apply compare_universe_subst_instance.
+  - repeat rewrite subst_instance_mkApps. eapply cumul_Const.
+    * apply precompose_subst_instance_global.
+      rewrite length_map. eapply cmp_global_instance_impl_same_napp; try eapply Hu; eauto.
+      { now apply eq_universe_subst_instance. }
+      { now apply compare_universe_subst_instance. }
+    * eapply All2_map. repeat toAll. eapply All2_impl. 1: tea. cbn; intros.
+      eapply X0.2; eauto.
 Defined.
 
 Lemma convSpec_subst_instance (Σ : global_env_ext) Γ u A B univs :

@@ -221,6 +221,10 @@ gen-src/reflect.ml
 gen-src/reflect.mli
 gen-src/reflectEq.ml
 gen-src/reflectEq.mli
+gen-src/reflectAst.ml
+gen-src/reflectAst.mli
+gen-src/environmentReflect.ml
+gen-src/environmentReflect.mli
 gen-src/reification.ml
 gen-src/relation.ml
 gen-src/relation.mli

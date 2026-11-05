@@ -733,10 +733,17 @@ Proof.
     eapply (ws_cumul_pb_Axiom_l_inv (args := [_])) in w as [u' [args' []]]; tea. 2:eapply declared_constant_from_gen, H0. 2:eapply p.
     eapply cumulAlgo_cumulSpec. etransitivity. now eapply red_ws_cumul_pb.
     eapply All2_tip_l in a3 as [y' [-> Heq]]. red in c0.
-    eapply Forall2_tip_l in c0. cbn. eapply ws_cumul_pb_eq_le.
-    eapply (ws_cumul_pb_mkApps (args := [_]) (args' := [_])).
-    * constructor; fvs. constructor. red. destruct c0 as [? [-> eq]]. constructor. symmetry.
-      etransitivity; tea. now symmetry. constructor.
+    cbn. eapply ws_cumul_pb_eq_le.
+    eapply (ws_cumul_pb_Const Σ wfΣ (l := [_]) (l' := [_])). split.
+    * have hc : cmp_global_instance Σ (compare_universe Σ) Conv
+          (ConstRef prim_ty) 1 [array_level a0] u'.
+      { unfold cmp_global_instance_gen, global_variance_gen in *.
+        cbn in c0 |- *.
+        match goal with |- context [if ?b then _ else _] => destruct b end;
+          exact c0. }
+      etransitivity; first (symmetry; exact hc).
+      apply cmp_instance_opt_variance. constructor; auto.
+    * fvs.
     * constructor; [|constructor]. symmetry. etransitivity; tea. constructor; fvs. symmetry.
       now eapply eq_term_empty_eq_term.
 

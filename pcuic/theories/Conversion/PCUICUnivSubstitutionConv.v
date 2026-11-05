@@ -892,6 +892,8 @@ Proof.
     eapply cmp_global_instance_impl_same_napp; eauto.
   - eapply precompose_subst_instance_global__2.
     eapply cmp_global_instance_impl_same_napp; eauto.
+  - eapply precompose_subst_instance_global__2.
+    eapply cmp_global_instance_impl_same_napp; eauto.
   - destruct X2 as [? [? [? ?]]].
     repeat split; simpl; eauto; solve_all.
     * eapply precompose_subst_instance.

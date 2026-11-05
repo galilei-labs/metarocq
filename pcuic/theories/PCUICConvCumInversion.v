@@ -190,43 +190,45 @@ Section fixed.
   Context (Σ : global_env_ext).
   Context (wfΣ : ∥ wf Σ ∥).
 
-  Definition isIndConstructApp (t : term) : bool :=
+  Definition isGlobalApp (t : term) : bool :=
     match (decompose_app t).1 with
+    | tConst _ _
     | tInd _ _
     | tConstruct _ _ _ => true
     | _ => false
     end.
 
-  Lemma isIndConstructApp_mkApps hd args :
-    isIndConstructApp (mkApps hd args) = isIndConstructApp hd.
+  Lemma isGlobalApp_mkApps hd args :
+    isGlobalApp (mkApps hd args) = isGlobalApp hd.
   Proof using Type.
-    unfold isIndConstructApp.
+    unfold isGlobalApp.
     destruct (mkApps_elim hd args).
     rewrite !decompose_app_mkApps; by easy.
   Qed.
 
-  Lemma eq_term_upto_univ_napp_nonind cmp_universe cmp_sort pb napp t t' :
+  Lemma eq_term_upto_univ_napp_non_global cmp_universe cmp_sort pb napp t t' :
     eq_term_upto_univ_napp Σ cmp_universe cmp_sort pb napp t t' ->
-    isIndConstructApp t = false ->
+    isGlobalApp t = false ->
     eq_term_upto_univ Σ cmp_universe cmp_sort pb t t'.
   Proof using Type.
     intros eq not_ind.
     generalize 0.
     intros k.
     induction eq in k, not_ind |- *; eauto using eq_term_upto_univ_napp.
-    - rewrite (isIndConstructApp_mkApps _ [u]) in not_ind.
+     - rewrite (isGlobalApp_mkApps _ [u]) in not_ind.
       constructor; auto.
-    - discriminate not_ind.
-    - discriminate not_ind.
+     - discriminate not_ind.
+     - discriminate not_ind.
+     - discriminate not_ind.
   Qed.
 
-  Lemma whnf_red_isIndConstructApp Γ t t' :
+  Lemma whnf_red_isGlobalApp Γ t t' :
     whnf_red Σ Γ t t' ->
-    isIndConstructApp t' = isIndConstructApp t.
+    isGlobalApp t' = isGlobalApp t.
   Proof using Type.
     intros r.
     induction r; auto.
-    rewrite (isIndConstructApp_mkApps _ [arg']) (isIndConstructApp_mkApps _ [arg]).
+    rewrite (isGlobalApp_mkApps _ [arg']) (isGlobalApp_mkApps _ [arg]).
     apply IHr.
   Qed.
 
@@ -242,6 +244,7 @@ Section fixed.
 
   Definition conv_cum_napp pb Γ napp t t' :=
     match t with
+    | tConst _ _
     | tInd _ _
     | tConstruct _ _ _ => ∥eq_termp_napp Σ pb napp t t'∥
     | _ => conv_cum pb Σ Γ t t'
@@ -271,16 +274,16 @@ Section fixed.
     have [clhd' clargs'] : is_open_term Γ hd' /\ forallb (is_open_term Γ) args'.
     { move/clrel_src: r2. now rewrite on_free_vars_mkApps => /andP. }
     split.
-    - apply whnf_red_isIndConstructApp in w as ?.
+    - apply whnf_red_isGlobalApp in w as ?.
       destruct hd.
       all: cbn.
-      1-9, 12-16: apply conv_cum_alt; eauto.
-      1-13: constructor.
-      1-13: exists x1, x.
-      1-13: split; eauto with pcuic.
-      1-13: (eapply eq_term_upto_univ_napp_nonind; [exact e|try exact H1]).
-      1-13: cbn in *; congruence.
-      1-3: depelim w; subst; depelim e; depelim w0; subst;
+      1-8, 12-16: apply conv_cum_alt; eauto.
+      1-12: constructor.
+      1-12: exists x1, x.
+      1-12: split; eauto with pcuic.
+      1-12: (eapply eq_term_upto_univ_napp_non_global; [exact e|try exact H1]).
+      1-12: cbn in *; congruence.
+      1-4: depelim w; subst; depelim e; depelim w0; subst;
        apply All2_length in a;
        try (constructor; constructor; rewrite a; auto).
 

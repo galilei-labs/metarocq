@@ -5,6 +5,7 @@
 # CheckerTest.v
 # ErasureTests.v
 # TypeAnnotationTests.v
+array_universes.v
 bug1.v
 bug2.v
 bug369.v
@@ -59,4 +60,3 @@ unfold.v
 univ.v
 vs.v
 ind_fresh_univ.v
-

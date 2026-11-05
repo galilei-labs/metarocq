@@ -779,7 +779,7 @@ Proof using Type.
   - constructor. eapply PCUICEquality.eq_term_upto_univ_impl in IHT1; eauto.
     all:try typeclasses eauto.
     apply IHT2.
-  - constructor. now eapply cmp_True_subst_instance.
+  - constructor. now eapply cmp_instance_opt_variance, cmp_True_subst_instance.
   - constructor. now eapply cmp_instance_opt_variance, cmp_True_subst_instance.
   - constructor. now eapply cmp_instance_opt_variance, cmp_True_subst_instance.
   - cbn. constructor. splits; simpl; solve_all.
@@ -1232,6 +1232,7 @@ Proof using Type Hcf cf.
     cbn in H, e2. rewrite H in e2. noconf e2. eapply cumul_pb_cumul_prop; eauto; pcuic.
     move: w; simp prim_type. intro. etransitivity; tea. constructor; fvs. cbn.
     depelim X0. fvs. eapply eq_term_leq_term. symmetry; repeat constructor; eauto.
+    apply cmp_instance_opt_variance. constructor; auto.
 Qed.
 
 Lemma typing_leq_term_prop (Σ : global_env_ext) Γ t t' T T' :

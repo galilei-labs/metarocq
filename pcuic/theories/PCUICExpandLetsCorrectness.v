@@ -2217,12 +2217,38 @@ Proof.
   - cbn; depelim wt. eapply red_primArray_type; cbn; eauto.
 Qed.
 
+Lemma trans_primitive_arrayb {Σ : global_env} c :
+  primitive_arrayb Σ c -> primitive_arrayb (trans_global_env Σ) c.
+Proof.
+  intros ha.
+  have hs := primitive_arrayb_gen_spec (lookup_env Σ)
+    (primitive_constant Σ primArray) c.
+  rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+  destruct (primitive_arrayb_gen_spec (lookup_env (trans_global_env Σ))
+    (primitive_constant (trans_global_env Σ) primArray) c) as [h|h]; auto.
+  exfalso. apply h. split; first exact reg.
+  exists (trans_constant_body decl). split.
+  - now rewrite trans_lookup look.
+  - destruct inv as [ht hb hu].
+    unfold primitive_array_invariants, trans_constant_body; cbn.
+    rewrite ht hb hu. repeat split; reflexivity.
+Qed.
+
 Lemma trans_cmp_global_instance {Σ : global_env} Re Rle gref napp u u' :
   cmp_global_instance Σ Re Rle gref napp u u' ->
   cmp_global_instance (trans_global_env Σ) Re Rle gref napp u u'.
 Proof.
   unfold PCUICEquality.cmp_global_instance, PCUICEquality.global_variance.
-  destruct gref; simpl; auto.
+  destruct gref as [id|c|ind|cstr]; simpl; auto.
+  - change (cmp_opt_variance Re Rle
+      (if primitive_arrayb Σ c && (0 <? napp) then AllIrrelevant else AllEqual) u u' ->
+      cmp_opt_variance Re Rle
+      (if primitive_arrayb (trans_global_env Σ) c && (0 <? napp)
+       then AllIrrelevant else AllEqual) u u').
+    case ha: primitive_arrayb_gen => /=.
+    + have ha' := trans_primitive_arrayb c ha.
+      rewrite ha' /=. destruct Nat.ltb; auto.
+    + apply cmp_instance_opt_variance.
   - unfold S.lookup_inductive, S.lookup_minductive.
     unfold S.lookup_inductive_gen, S.lookup_minductive_gen.
     unfold lookup_inductive, lookup_minductive.
@@ -2290,7 +2316,7 @@ Proof.
       eapply ih ; eauto using subrelation_refl
     end
   ].
-  1,2,3,4,5,6: try solve [ constructor; unfold eq_mfixpoint in *; solve_all; eauto using subrelation_refl ].
+  all: try solve [ constructor; unfold eq_mfixpoint in *; solve_all; eauto using subrelation_refl ].
   all: try solve [ constructor; now eapply trans_cmp_global_instance ].
   - destruct X1 as [Hpars [Huinst [Hctx Hret]]].
     destruct X as [IHpars [IHctx IHret]].

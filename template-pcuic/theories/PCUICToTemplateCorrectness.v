@@ -1408,6 +1408,24 @@ Proof.
     eapply OnOne2_map. solve_all.
 Qed.
 
+Lemma trans_primitive_arrayb Σ c :
+  PCUICEquality.primitive_arrayb Σ c ->
+  TermEquality.primitive_arrayb (trans_global_env Σ) c.
+Proof.
+  intros ha.
+  have hs := PCUICEquality.primitive_arrayb_gen_spec (SE.lookup_env Σ)
+    (SE.primitive_constant Σ primArray) c.
+  rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+  destruct (TermEquality.primitive_arrayb_gen_spec (T.Env.lookup_env (trans_global_env Σ))
+    (T.Env.primitive_constant (trans_global_env Σ) primArray) c) as [h|h]; auto.
+  exfalso. apply h. split; first exact reg.
+  exists (trans_constant_body decl). split.
+  - now rewrite trans_lookup look.
+  - destruct inv as [ht hb hu].
+    unfold TermEquality.primitive_array_invariants, trans_constant_body; cbn.
+    rewrite ht hb. repeat split; try reflexivity. exact hu.
+Qed.
+
 Lemma trans_cmp_global_instance Σ cmp_universe pb gref napp u u' :
   PCUICEquality.cmp_global_instance Σ cmp_universe pb gref napp u u' ->
   TermEquality.cmp_global_instance (trans_global_env Σ) cmp_universe pb gref napp u u'.
@@ -1415,6 +1433,11 @@ Proof.
   unfold PCUICEquality.cmp_global_instance, PCUICEquality.cmp_global_instance_gen, PCUICEquality.global_variance.
   unfold TermEquality.cmp_global_instance, TermEquality.global_variance.
   destruct gref; simpl; auto.
+  - unfold TermEquality.cmp_global_instance_gen; cbn.
+    case ha: PCUICEquality.primitive_arrayb_gen.
+    + have ha' := trans_primitive_arrayb Σ k ha.
+      rewrite ha' /=. trivial.
+    + cbn. apply TermEquality.cmp_instance_opt_variance.
   - unfold S.lookup_inductive, S.lookup_minductive.
     unfold S.lookup_inductive_gen, S.lookup_minductive_gen.
     unfold lookup_inductive, lookup_minductive.
@@ -1460,7 +1483,7 @@ Proof.
       eapply ih ; auto
     end
   ].
-  1,6,7: try solve [ constructor; unfold eq_mfixpoint in *; solve_all ].
+  all: try solve [ constructor; unfold eq_mfixpoint in *; solve_all ].
   all: try solve [ constructor; now eapply trans_cmp_global_instance ].
   - eapply (TermEquality.eq_term_upto_univ_mkApps _ _ _ _ _ _ [_] _ [_]); simpl; eauto.
   - destruct X1 as [Hpars [Huinst [Hctx Hret]]].
@@ -1471,8 +1494,8 @@ Proof.
     eapply trans_eq_context_gen_eq_binder_annot in Hctx.
     now rewrite !map_context_trans.
     red in X0. solve_all_one.
-    eapply trans_eq_context_gen_eq_binder_annot in a.
-    now rewrite !map_context_trans.
+     eapply trans_eq_context_gen_eq_binder_annot in a.
+     now rewrite !map_context_trans.
   - depelim X0; cbn in X |- *; try econstructor; intuition eauto; solve_all.
     repeat (constructor; tas).
 Qed.

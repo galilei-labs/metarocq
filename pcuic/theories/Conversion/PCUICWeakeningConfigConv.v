@@ -97,8 +97,9 @@ Proof.
     eapply @cmp_global_instance_impl; [ .. | eassumption ].
     3: auto with arith. all: intros ??; now apply (@cmp_universe_config_impl cf1 cf2).
   - eapply cumul_Sort. eapply (@cmp_sort_config_impl cf1 cf2); eassumption.
-  - eapply cumul_Const. eapply cmp_universe_instance_impl'; eauto; tc.
-    hnf; intros *; eapply (@cmp_universe_config_impl cf1 cf2); eassumption.
+  - eapply cumul_Const; eauto. 2:solve_all.
+    eapply @cmp_global_instance_impl; [ .. | eassumption ].
+    3: auto with arith. all: intros ??; now apply (@cmp_universe_config_impl cf1 cf2).
 Defined.
 
 Lemma weakening_config_convSpec {cf1 cf2} Σ Γ M N :

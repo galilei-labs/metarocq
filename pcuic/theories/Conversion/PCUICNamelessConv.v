@@ -226,12 +226,29 @@ Proof.
 Qed.
 
 Lemma global_variance_nl_sigma_mon {Σ gr napp} :
-  global_variance (nl_global_env Σ) gr napp =
-  global_variance Σ gr napp.
+  match global_variance Σ gr napp with
+  | AllEqual => True
+  | AllIrrelevant => global_variance (nl_global_env Σ) gr napp = AllIrrelevant
+  | Variance v => global_variance (nl_global_env Σ) gr napp = Variance v
+  end.
 Proof.
   rewrite /global_variance_gen /lookup_constructor /lookup_constructor_gen
   /lookup_inductive /lookup_inductive_gen /lookup_minductive /lookup_minductive_gen.
   destruct gr as [|ind|[ind i]|] => /= //.
+  - case ha: primitive_arrayb_gen => /= //.
+    have hs := primitive_arrayb_gen_spec (lookup_env Σ)
+      (primitive_constant Σ primArray) ind.
+    rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+    have ha' : primitive_arrayb (nl_global_env Σ) ind.
+    { destruct (primitive_arrayb_gen_spec (lookup_env (nl_global_env Σ))
+        (primitive_constant (nl_global_env Σ) primArray) ind) as [h|h]; auto.
+      exfalso. apply h. split; first exact reg.
+      exists (nl_constant_body decl). split.
+      - now rewrite nl_lookup_env look.
+      - destruct inv as [ht hb hu].
+        unfold primitive_array_invariants, nl_constant_body; cbn.
+        rewrite ht hb hu. repeat split; reflexivity. }
+    rewrite ha' /=. destruct Nat.ltb; auto.
   - rewrite nl_lookup_env.
     destruct lookup_env => /= //.
     destruct g; simpl => //.
@@ -239,7 +256,8 @@ Proof.
     destruct nth_error => /= //.
     rewrite (nl_destArity []).
     destruct (destArity [] (ind_type o)) as [[ctx s]|] eqn:da => /= //.
-    now rewrite nl_context_assumptions.
+     rewrite nl_context_assumptions.
+     destruct Nat.leb; auto. destruct ind_variance; auto.
   - rewrite nl_lookup_env.
     destruct lookup_env => /= //.
     destruct g; simpl => //.
@@ -247,6 +265,7 @@ Proof.
     destruct nth_error => /= //.
     rewrite nth_error_map.
     destruct nth_error => /= //.
+    destruct Nat.leb; auto.
 Qed.
 
 Lemma cmp_global_instance_nl Σ cmp_universe pb gr napp :
@@ -255,7 +274,11 @@ Lemma cmp_global_instance_nl Σ cmp_universe pb gr napp :
 Proof.
   intros t t'.
   unfold cmp_global_instance, cmp_global_instance_gen.
-  now rewrite global_variance_nl_sigma_mon.
+  move: (@global_variance_nl_sigma_mon Σ gr napp).
+  destruct global_variance_gen as [| |v].
+  - intros _. apply cmp_instance_opt_variance.
+  - intros ->. trivial.
+  - intros ->. trivial.
 Qed.
 
 Lemma eq_context_nl_IH ctx ctx' :
@@ -279,6 +302,8 @@ Proof.
   all: try solve [ econstructor ; eauto ].
   - econstructor.
     solve_all.
+  - econstructor. all: try solve [ eauto ].
+    eapply cmp_global_instance_nl; eauto.
   - econstructor. all: try solve [ eauto ].
     eapply cmp_global_instance_nl; eauto.
   - econstructor. all: try solve [ eauto ].

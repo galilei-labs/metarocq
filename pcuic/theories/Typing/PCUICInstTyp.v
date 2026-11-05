@@ -340,7 +340,11 @@ Proof.
        destruct_head'_prod.
        eauto.
    - eapply cumul_Sort; eauto.
-   - eapply cumul_Const; eauto.
+    - cbn. repeat rewrite inst_mkApps. eapply cumul_Const.
+      * repeat rewrite length_map; eauto.
+      * repeat toAll.
+        eapply All2_impl. 1: tea. cbn; intros.
+        destruct_head'_prod; eauto.
 Defined.
 
 Lemma inst_convSpec {cf : checker_flags} {Σ : global_env_ext} {wfΣ : wf Σ} {Γ Δ σ A B} :

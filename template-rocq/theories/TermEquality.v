@@ -1,8 +1,8 @@
 (* Distributed under the terms of the MIT license. *)
 From Stdlib Require Import CMorphisms.
 From MetaRocq.Utils Require Import utils.
-From MetaRocq.Common Require Import config Reflect Environment EnvironmentTyping.
-From MetaRocq.Template Require Import Ast AstUtils Induction.
+From MetaRocq.Common Require Import config Reflect Environment EnvironmentTyping Primitive.
+From MetaRocq.Template Require Import Ast AstUtils Induction ReflectAst.
 
 From Stdlib Require Import ssreflect ssrbool.
 From Equations.Prop Require Import DepElim.
@@ -29,8 +29,61 @@ Definition cmp_universe_variance (cmp_univ : conv_pb -> Universe.t -> Universe.t
 Definition cmp_universe_instance_variance cmp_univ pb v u u' :=
   Forall3 (cmp_universe_variance cmp_univ pb) v u u'.
 
-Definition global_variance_gen lookup gr napp :=
+(* Keep primitive-array type comparison aligned with PCUICEquality. Universe
+   binder names are cosmetic; declaration arity, constraints and body are not. *)
+Definition array_universes_shape (u : universes_decl) : universes_decl :=
+  match u with
+  | Monomorphic_ctx => Monomorphic_ctx
+  | Polymorphic_ctx (names, _) =>
+    Polymorphic_ctx (map (fun _ => nAnon) names, ConstraintSet.empty)
+  end.
+
+Definition primitive_array_invariants (decl : constant_body) :=
+  let s := sType (Universe.make' (Level.lvar 0)) in
+  [/\ decl.(cst_type) = tImpl (tSort s) (tSort s),
+      decl.(cst_body) = None &
+      array_universes_shape decl.(cst_universes) = Polymorphic_ctx array_uctx].
+
+Definition primitive_arrayb_gen lookup (array : option kername) c :=
+  match array, lookup c with
+  | Some array, Some (ConstantDecl decl) =>
+    (array == c) && (decl.(cst_body) == None) &&
+    (array_universes_shape decl.(cst_universes) == Polymorphic_ctx array_uctx) &&
+    (decl.(cst_type) ==
+      let s := sType (Universe.make' (Level.lvar 0)) in tImpl (tSort s) (tSort s))
+  | _, _ => false
+  end.
+
+Notation primitive_arrayb Σ :=
+  (primitive_arrayb_gen (lookup_env Σ) (primitive_constant Σ primArray)).
+
+Lemma primitive_arrayb_gen_spec lookup array c :
+  reflect (array = Some c /\
+    exists decl, lookup c = Some (ConstantDecl decl) /\
+      primitive_array_invariants decl)
+    (primitive_arrayb_gen lookup array c).
+Proof.
+  apply iff_reflect. unfold primitive_arrayb_gen.
+  destruct array as [a|]; destruct (lookup c) as [[decl|mdecl]|]; cbn;
+    try (split; [intros [? [d [? ?]]]; congruence | discriminate]).
+  case: (ReflectEq.eqb_spec a c) => ha;
+  case: (ReflectEq.eqb_spec decl.(cst_body) None) => hb;
+  case: (ReflectEq.eqb_spec (array_universes_shape decl.(cst_universes)) (Polymorphic_ctx array_uctx)) => hu;
+  case: (ReflectEq.eqb_spec decl.(cst_type)
+    (let s := sType (Universe.make' (Level.lvar 0)) in
+      tImpl (tSort s) (tSort s))) => ht; cbn; split.
+  all: try (intros [h [d [hd [hdt hdb hdu]]]];
+    inversion h; inversion hd; subst; congruence).
+  all: try discriminate.
+  intros _. split; [congruence |]. exists decl.
+  split; [reflexivity |]. constructor; assumption.
+Qed.
+
+Definition global_variance_gen lookup array gr napp :=
   match gr with
+  | ConstRef c =>
+    if primitive_arrayb_gen lookup array c && (0 <? napp)
+    then AllIrrelevant else AllEqual
   | IndRef ind =>
     match lookup_inductive_gen lookup ind with
     | Some (mdecl, idecl) =>
@@ -59,7 +112,8 @@ Definition global_variance_gen lookup gr napp :=
   | _ => AllEqual
   end.
 
-Notation global_variance Σ := (global_variance_gen (lookup_env Σ)).
+Notation global_variance Σ :=
+  (global_variance_gen (lookup_env Σ) (primitive_constant Σ primArray)).
 
 Definition cmp_opt_variance cmp_univ pb v :=
   match v with
@@ -114,10 +168,11 @@ Proof.
     now exfalso.
 Qed.
 
-Definition cmp_global_instance_gen Σ cmp_universe pb gr napp :=
-  cmp_opt_variance cmp_universe pb (global_variance_gen Σ gr napp).
+Definition cmp_global_instance_gen Σ array cmp_universe pb gr napp :=
+  cmp_opt_variance cmp_universe pb (global_variance_gen Σ array gr napp).
 
-Notation cmp_global_instance Σ := (cmp_global_instance_gen (lookup_env Σ)).
+Notation cmp_global_instance Σ :=
+  (cmp_global_instance_gen (lookup_env Σ) (primitive_constant Σ primArray)).
 
 Lemma cmp_universe_instance_impl R R' :
   RelationClasses.subrelation R R' ->
@@ -224,7 +279,7 @@ Inductive eq_term_upto_univ_napp Σ
     eq_term_upto_univ_napp Σ cmp_universe cmp_sort pb napp (tApp t u) (tApp t' u')
 
 | eq_Const c u u' :
-    cmp_universe_instance (cmp_universe Conv) u u' ->
+    cmp_global_instance Σ cmp_universe pb (ConstRef c) napp u u' ->
     eq_term_upto_univ_napp Σ cmp_universe cmp_sort pb napp (tConst c u) (tConst c u')
 
 | eq_Ind i u u' :
@@ -375,6 +430,7 @@ Proof.
     intros. easy.
   - now apply cmp_global_instance_refl.
   - now apply cmp_global_instance_refl.
+  - now apply cmp_global_instance_refl.
   - destruct X as [Ppars Preturn]. eapply All_All2. 1:eassumption.
     intros; easy.
   - destruct X as [Ppars Preturn]. now apply Preturn.
@@ -446,6 +502,9 @@ Proof.
   intros hnapp.
   rewrite /global_variance_gen.
   destruct gr => //=.
+  - destruct primitive_arrayb_gen => //=.
+    case: Nat.ltb_spec => // hpos.
+    case: Nat.ltb_spec => //; lia.
   - destruct lookup_inductive_gen as [[mdecl idec]|] => //=.
     destruct destArity as [[ctx s]|] => //=.
     elim: Nat.leb_spec => // cass.
@@ -495,6 +554,8 @@ Proof.
     solve_all.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_impl. 4:eauto. all:auto.
+  - inversion 1; subst; constructor.
+    eapply cmp_global_instance_impl. 4:eauto. all:eauto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_impl. 4:eauto. all:eauto.
   - destruct X as [IHpars IHret].

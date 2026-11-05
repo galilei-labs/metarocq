@@ -62,6 +62,21 @@ Proof using P Pcmp cf.
   rewrite /global_variance_gen /lookup_constructor /lookup_constructor_gen
     /lookup_inductive /lookup_inductive_gen /lookup_minductive /lookup_minductive_gen.
   destruct gr as [|ind|[ind i]|] => //=.
+  - case ha: primitive_arrayb_gen => //=.
+    have hs := primitive_arrayb_gen_spec (lookup_env Σ)
+      (primitive_constant Σ primArray) ind.
+    rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+    have reg' : primitive_constant Σ' primArray = Some ind.
+    { destruct ext as [_ _ [_ [_ [_ hr]]]].
+      cbn in reg. rewrite reg in hr.
+      now inversion hr. }
+    have look' : lookup_env Σ' ind = Some (ConstantDecl decl).
+    { eapply extends_lookup; eauto. }
+    have ha' : primitive_arrayb Σ' ind.
+    { destruct (primitive_arrayb_gen_spec (lookup_env Σ')
+        (primitive_constant Σ' primArray) ind) as [h|h]; auto.
+      exfalso. apply h. split; eauto. }
+    rewrite ha' /=. destruct Nat.ltb; auto.
   - destruct (lookup_env Σ ind) eqn:look => //.
     eapply extends_lookup in look; eauto. rewrite look //.
     destruct g => //=; destruct nth_error => //=.
@@ -110,6 +125,8 @@ Proof using P Pcmp cf.
   - inversion 1; subst; constructor.
     eapply All2_impl'; tea.
     eapply All_impl; eauto.
+  - inversion 1; subst; constructor.
+    eapply cmp_global_instance_weaken_env. 5:eauto. all:eauto.
   - inversion 1; subst; constructor.
     eapply cmp_global_instance_weaken_env. 5:eauto. all:eauto.
   - inversion 1; subst; constructor.
@@ -207,7 +224,8 @@ Proof.
   - eapply cumul_Construct; eauto. 2:solve_all.
     eapply @cmp_global_instance_weaken_env. 1,2,5:eauto. all: tc.
   - eapply cumul_Sort. eapply subrelations_compare_extends; tea.
-  - eapply cumul_Const. eapply cmp_universe_instance_impl'; eauto; tc.
+  - eapply cumul_Const; eauto. 2:solve_all.
+    eapply @cmp_global_instance_weaken_env. 1,2,5:eauto. all: tc.
 Defined.
 
 

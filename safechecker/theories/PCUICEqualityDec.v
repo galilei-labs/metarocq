@@ -52,8 +52,8 @@ Definition compare_universe_instance equ u u' :=
 Definition compare_universe_instance_variance cmpu pb v u u' :=
   forallb3 (compare_universe_variance cmpu pb) v u u'.
 
-Definition compare_global_instance lookup cmpu pb gr napp u u' :=
-  match global_variance_gen lookup gr napp with
+Definition compare_global_instance lookup array cmpu pb gr napp u u' :=
+  match global_variance_gen lookup array gr napp with
   | AllEqual => compare_universe_instance (cmpu Conv) u u'
   | Variance v =>
     compare_universe_instance_variance cmpu pb v u u' || compare_universe_instance (cmpu Conv) u u'
@@ -101,7 +101,7 @@ Fixpoint eqb_term_upto_univ_napp
 
   | tConst c u, tConst c' u' =>
     eqb c c' &&
-    compare_universe_instance (cmpu Conv) u u'
+    gen_compare_global_instance pb (ConstRef c) napp u u'
 
   | tInd i u, tInd i' u' =>
     eqb i i' &&
@@ -227,17 +227,17 @@ Proof.
     + now apply/he.
 Qed.
 
-Lemma reflect_cmp_global_instance' lookup (p : Universe.t -> bool) cmpu cmp_universe pb gr napp ui ui' :
+Lemma reflect_cmp_global_instance' lookup array (p : Universe.t -> bool) cmpu cmp_universe pb gr napp ui ui' :
   (forall u u', p u -> p u' -> reflect (cmp_universe Conv u u') (cmpu Conv u u')) ->
   (forall u u', p u -> p u' -> reflect (cmp_universe pb u u') (cmpu pb u u')) ->
   forallb p (map Universe.make' ui) ->
   forallb p (map Universe.make' ui') ->
-  reflect (cmp_global_instance_gen lookup cmp_universe pb gr napp ui ui')
-    (compare_global_instance lookup cmpu pb gr napp ui ui').
+  reflect (cmp_global_instance_gen lookup array cmp_universe pb gr napp ui ui')
+    (compare_global_instance lookup array cmpu pb gr napp ui ui').
 Proof.
   intros he hle hui hui'.
   rewrite /compare_global_instance /cmp_global_instance_gen /cmp_opt_variance.
-  destruct (global_variance_gen _ gr napp) as [| |v].
+  destruct (global_variance_gen _ _ gr napp) as [| |v].
   - eapply reflect_cmp_universe_instance; tea.
   - apply eqb_specT.
   - apply equiv_reflect; split.
@@ -256,14 +256,14 @@ Lemma reflect_cmp_global_instance Σ lookup (p : Universe.t -> bool) cmpu cmp_un
   forallb p (map Universe.make' ui) ->
   forallb p (map Universe.make' ui') ->
   reflect (cmp_global_instance Σ cmp_universe pb gr napp ui ui')
-    (compare_global_instance lookup cmpu pb gr napp ui ui').
+    (compare_global_instance lookup (primitive_constant Σ primArray) cmpu pb gr napp ui ui').
 Proof.
   intros he hleh hlookup hui hui'.
-  pose proof (Hglobal := reflect_cmp_global_instance' lookup p
+  pose proof (Hglobal := reflect_cmp_global_instance' lookup (primitive_constant Σ primArray) p
         cmpu cmp_universe pb gr napp ui ui' he hleh hui hui').
   rewrite /cmp_global_instance_gen /compare_global_instance /cmp_opt_variance.
   rewrite /global_variance_gen /lookup_constructor_gen /lookup_inductive_gen /lookup_minductive_gen.
-  destruct gr; auto; now repeat rewrite hlookup.
+   destruct gr; auto; unfold primitive_arrayb_gen; now repeat rewrite hlookup.
 Qed.
 
 Lemma forallb_true {A : Type} (l : list A) : forallb xpredT l.
@@ -275,7 +275,7 @@ Lemma compare_global_instance_impl Σ lookup cmpu cmp_universe pb gr napp :
   (forall u u', reflect (cmp_universe Conv u u') (cmpu Conv u u')) ->
   (forall u u', reflect (cmp_universe pb u u') (cmpu pb u u')) ->
   (forall kn, lookup_env Σ kn = lookup kn) ->
-  subrelation (compare_global_instance lookup cmpu pb gr napp) (cmp_global_instance Σ cmp_universe pb gr napp).
+  subrelation (compare_global_instance lookup (primitive_constant Σ primArray) cmpu pb gr napp) (cmp_global_instance Σ cmp_universe pb gr napp).
 Proof.
   intros hre hrle hlookup x y.
   move/reflect_cmp_global_instance => H. eapply H.
@@ -479,7 +479,7 @@ Proof.
   - equspec cmps pb hspb.
     constructor. constructor. assumption.
   - eapply reflectT_change_left. { split; intros XE. 1: constructor; now apply XE. now depelim XE. }
-    apply reflect_reflectT. eapply reflect_cmp_universe_instance; eauto.
+    apply reflect_reflectT. now eapply hglpb.
   - eapply reflectT_change_left. { split; intros XE. 1: constructor; now apply XE. now depelim XE. }
     apply reflect_reflectT. now eapply hglpb.
   - eapply reflectT_change_left. { split; intros XE. 1: constructor; now apply XE. now depelim XE. }
@@ -548,11 +548,11 @@ Proof.
   all: eassumption.
 Qed.
 
-Definition compare_global_instance_proper lookup cmpu cmpu' :
+Definition compare_global_instance_proper lookup array cmpu cmpu' :
   (forall pb u u', cmpu pb u u' = cmpu' pb u u') ->
   forall ref pb n l l',
-      compare_global_instance lookup cmpu pb ref n l l' =
-      compare_global_instance lookup cmpu' pb ref n l l'.
+      compare_global_instance lookup array cmpu pb ref n l l' =
+      compare_global_instance lookup array cmpu' pb ref n l l'.
 Proof.
   intros Hequ ref pb n l l'.
   apply eq_true_iff_eq. etransitivity.
@@ -571,7 +571,7 @@ Definition eqb_term_upto_univ_proper Σ cmpu cmpu' cmps cmps'
   pb napp (t u : term) :
   (forall pb u u', wf_universe Σ u -> wf_universe Σ u' -> cmpu pb u u' = cmpu' pb u u') ->
   (forall pb s s', wf_sort Σ s -> wf_sort Σ s' -> cmps pb s s' = cmps' pb s s') ->
-  (forall ref pb n l l', compare_global_instance (lookup_env Σ) cmpu pb ref n l l' = gen_compare_global_instance pb ref n l l') ->
+  (forall ref pb n l l', compare_global_instance (lookup_env Σ) (primitive_constant Σ primArray) cmpu pb ref n l l' = gen_compare_global_instance pb ref n l l') ->
   (forall ref pb n l l', gen_compare_global_instance ref pb n l l' =
                           gen_compare_global_instance' ref pb n l l') ->
   wf_universes Σ t -> wf_universes Σ u ->
@@ -596,12 +596,12 @@ Defined.
 
 
 Lemma compare_global_instance_refl :
-  forall Σ (cmpu : conv_pb -> Universe.t -> Universe.t -> bool) gr pb napp u,
+  forall Σ array (cmpu : conv_pb -> Universe.t -> Universe.t -> bool) gr pb napp u,
     (forall u, cmpu Conv u u) ->
     (forall u, cmpu pb u u) ->
-    compare_global_instance Σ cmpu pb gr napp u u.
+    compare_global_instance Σ array cmpu pb gr napp u u.
 Proof.
-  intros Σ cmpu gr pb napp u cmpu_refl cmpu_refl'.
+  intros Σ array cmpu gr pb napp u cmpu_refl cmpu_refl'.
   rewrite /compare_global_instance.
   destruct global_variance_gen as [| |v].
   - apply All2_forallb2, All2_refl; auto.
@@ -656,7 +656,7 @@ Proof.
   - apply forallb_All in wt; eapply All_mix in wt; try exact X; eapply All_All2 ; try exact wt;
     intros ? [? ?]; eauto.
   - revert s wt; move => ? /wf_sort_reflect ?; eauto.
-  - eapply cmp_universe_instance_refl_wf; eauto.
+  - apply cmp_global_instance_refl_wf; auto.
   - apply cmp_global_instance_refl_wf; auto.
   - apply cmp_global_instance_refl_wf; auto.
   - destruct X as [? [? ?]].
@@ -769,7 +769,7 @@ Definition eqb_ctx_gen_proper Σ cmpu cmpu' cmps cmps'
   pb :
   (forall pb u u', wf_universe Σ u -> wf_universe Σ u' -> cmpu pb u u' = cmpu' pb u u') ->
   (forall pb s s', wf_sort Σ s -> wf_sort Σ s' -> cmps pb s s' = cmps' pb s s') ->
-  (forall ref pb n l l', compare_global_instance (lookup_env Σ) cmpu pb ref n l l' = gen_compare_global_instance pb ref n l l') ->
+  (forall ref pb n l l', compare_global_instance (lookup_env Σ) (primitive_constant Σ primArray) cmpu pb ref n l l' = gen_compare_global_instance pb ref n l l') ->
   (forall ref pb n l l', gen_compare_global_instance ref pb n l l' =
                           gen_compare_global_instance' ref pb n l l') ->
   forall Γ Δ,
@@ -989,11 +989,11 @@ Section EqualityDecGen.
 
   Definition eqb_ctx leqb_level_n_gen :=
       eqb_ctx_upto (check_cmpb_universe_gen leqb_level_n_gen) (check_cmpb_sort_gen leqb_level_n_gen)
-        (compare_global_instance (lookup_env Σ) (check_cmpb_universe_gen leqb_level_n_gen)).
+        (compare_global_instance (lookup_env Σ) (primitive_constant Σ primArray) (check_cmpb_universe_gen leqb_level_n_gen)).
 
   Definition eqb_termp_napp leqb_level_n_gen :=
     eqb_term_upto_univ_napp (check_cmpb_universe_gen leqb_level_n_gen) (check_cmpb_sort_gen leqb_level_n_gen)
-    (compare_global_instance (lookup_env Σ) (check_cmpb_universe_gen leqb_level_n_gen)).
+    (compare_global_instance (lookup_env Σ) (primitive_constant Σ primArray) (check_cmpb_universe_gen leqb_level_n_gen)).
 
   Lemma reflect_eqb_termp_napp pb leqb_level_n_gen
     (leqb_correct : leqb_level_n_spec_gen uctx' leqb_level_n_gen) napp t u :

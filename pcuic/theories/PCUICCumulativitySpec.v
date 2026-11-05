@@ -97,9 +97,10 @@ Inductive cumulSpec0 {cf : checker_flags} (Σ : global_env_ext) Γ (pb : conv_pb
     compare_sort Σ pb s s' ->
     Σ ;;; Γ ⊢ tSort s ≤s[pb] tSort s'
 
-| cumul_Const : forall c u u',
-    cmp_universe_instance (compare_universe Σ Conv) u u' ->
-    Σ ;;; Γ ⊢ tConst c u ≤s[pb] tConst c u'
+| cumul_Const : forall c u u' args args',
+    cmp_global_instance Σ (compare_universe Σ) pb (ConstRef c) #|args| u u' ->
+    All2 (fun t u => Σ ;;; Γ ⊢ t ≤s[Conv] u) args args' ->
+    Σ ;;; Γ ⊢ mkApps (tConst c u) args ≤s[pb] mkApps (tConst c u') args'
 
 (* congruence rules *)
 
@@ -454,9 +455,12 @@ Lemma cumulSpec0_rect :
           (cumul_Sort _ _ _ _ _ Hs)) ->
 
     (forall (Γ : context) (pb : conv_pb) (c : kername) (u u' : list Level.t)
-            (Hu : cmp_universe_instance (compare_universe Σ Conv) u u'),
-        P cf Σ Γ pb (tConst c u) (tConst c u')
-          (cumul_Const _ _ _ _ _ _ Hu)) ->
+            (args args' : list term)
+            (Hu : cmp_global_instance Σ (compare_universe Σ) pb (ConstRef c) #|args| u u')
+            (Hargs : All2 (cumulSpec0 Σ Γ Conv) args args')
+            (_ : All2_dep (P cf Σ Γ Conv) Hargs),
+        P cf Σ Γ pb (mkApps (tConst c u) args) (mkApps (tConst c u') args')
+          (cumul_Const _ _ _ _ _ _ _ _ Hu Hargs)) ->
 
     forall (Γ : context) (pb : conv_pb) (t t0 : term) (Ht : @cumulSpec0 cf Σ Γ pb t t0), P cf Σ Γ pb t t0 Ht.
 Proof.
@@ -476,6 +480,9 @@ Proof.
     fix aux' 3; destruct a; constructor; auto.
   - eapply X23; eauto.
   - eapply X24; eauto.
+    clear -a aux.
+    revert args args' a.
+    fix aux' 3; destruct a; constructor; auto.
   - eapply X11; eauto.
     revert args args' a.
     fix aux' 3; destruct a; constructor; auto.
@@ -716,9 +723,12 @@ Lemma convSpec0_ind_all :
             (cumul_Sort _ _ _ _ _ Hs)) ->
 
       (forall (Γ : context) (c : kername) (u u' : list Level.t)
-              (Hu : cmp_universe_instance (compare_universe Σ Conv) u u'),
-          P cf Σ Γ Conv (tConst c u) (tConst c u')
-            (cumul_Const _ _ _ _ _ _ Hu)) ->
+              (args args' : list term)
+              (Hu : cmp_global_instance Σ (compare_universe Σ) Conv (ConstRef c) #|args| u u')
+              (Hargs : All2 (cumulSpec0 Σ Γ Conv) args args')
+              (_ : All2_dep (P cf Σ Γ Conv) Hargs),
+          P cf Σ Γ Conv (mkApps (tConst c u) args) (mkApps (tConst c u') args')
+            (cumul_Const _ _ _ _ _ _ _ _ Hu Hargs)) ->
 
        forall (Γ : context) (t t0 : term) (Ht : cumulSpec0 Σ Γ Conv t t0), P cf Σ Γ Conv t t0 Ht.
 Proof.

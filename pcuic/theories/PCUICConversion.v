@@ -171,6 +171,7 @@ Section CumulSpecIsCumulAlgo.
       eapply cumul_Evar. eapply All2_impl; try exact X. cbv beta. intuition.
       try_with_nil.
     - eapply (IHM1 _ _ _ (M2 :: args) (u' :: args')); eauto. econstructor; eauto. try_with_nil.
+    - eapply cumul_Const; eauto.
     - eapply cumul_Ind; eauto.
     - eapply cumul_Construct; eauto.
     - apply cumul_mkApps; eauto. unfold tCasePredProp in X. destruct X as [ X [ Xctx Xreturn ]].
@@ -1406,7 +1407,7 @@ Section Inversions.
     ∑ u' args',
       [× Σ ;;; Γ ⊢ T ⇝ mkApps (tConst cst u') args',
          All2 (fun args args' => Σ ;;; Γ ⊢ args ≤[Conv] args') args args' &
-         PCUICEquality.cmp_universe_instance (eq_universe Σ) u u'].
+         cmp_global_instance Σ (compare_universe Σ) pb (ConstRef cst) #|args| u u'].
   Proof using wfΣ.
     intros hdecl hb H.
     eapply ws_cumul_pb_red in H as (v & v' & [tv tv' eqp]).
@@ -1414,6 +1415,7 @@ Section Inversions.
     eapply compare_term_mkApps_l_inv in eqp as [t' [l' []]]; subst v'.
     depelim c.
     exists u', l'. split => //.
+    2: now rewrite (All2_length a).
     eapply closed_red_open_right in tv'. rewrite on_free_vars_mkApps /= in tv'.
     solve_all.
     eapply All2_All2_All2; tea. cbn.
@@ -1428,7 +1430,7 @@ Section Inversions.
     ∑ u' args',
       [× Σ ;;; Γ ⊢ T ⇝ mkApps (tConst cst u') args',
          All2 (fun args args' => Σ ;;; Γ ⊢ args ≤[Conv] args') args' args &
-         PCUICEquality.cmp_universe_instance (eq_universe Σ) u' u].
+         cmp_global_instance Σ (compare_universe Σ) pb (ConstRef cst) #|args'| u' u].
   Proof using wfΣ.
     intros hdecl hb H.
     eapply ws_cumul_pb_red in H as (v & v' & [tv tv' eqp]).
@@ -1436,6 +1438,7 @@ Section Inversions.
     eapply compare_term_mkApps_r_inv in eqp as [t' [l' []]]; subst v.
     depelim c.
     exists u0, l'. split => //.
+    2: now rewrite (All2_length a0).
     eapply closed_red_open_right in tv. rewrite on_free_vars_mkApps /= in tv.
     solve_all.
     eapply All2_sym in a0. eapply All2_sym.
@@ -3874,6 +3877,35 @@ Section MoreCongruenceLemmas.
       * symmetry. eassumption.
   Defined.
 
+  Lemma ws_cumul_pb_Const {pb Γ c ui ui' l l'} :
+    [× cmp_global_instance Σ (compare_universe Σ) pb (ConstRef c) #|l| ui ui',
+       is_closed_context Γ & ws_cumul_pb_terms Σ Γ l l'] ->
+    Σ ;;; Γ ⊢ mkApps (tConst c ui) l ≤[pb] mkApps (tConst c ui') l'.
+  Proof.
+    intros [Rglob Rclosed Hll'].
+    apply ws_cumul_pb_terms_alt in Hll' as [l0 [l0' [Hl0 Hl0' Hl0l0']]].
+    assert (Σ ;;; Γ ⊢ mkApps (tConst c ui) l0 ≤[pb] mkApps (tConst c ui') l0').
+    { econstructor 1; eauto.
+      - cbn. clear -cf wfΣ Hl0. rewrite on_free_vars_mkApps; cbn.
+        apply All_forallb. induction Hl0; eauto; intros. cbn in *. econstructor; eauto.
+        destruct r; eapply red_is_open_term; eauto.
+      - cbn. clear -cf wfΣ Hl0'. rewrite on_free_vars_mkApps; cbn.
+        apply All_forallb. induction Hl0'; eauto; intros. cbn in *. econstructor; eauto.
+        destruct r; eapply red_is_open_term; eauto.
+      - apply All2_length in Hl0. rewrite Hl0 in Rglob. clear Hl0 Hl0'.
+        apply eq_term_upto_univ_napp_mkApps; eauto.
+        constructor. now rewrite Nat.add_0_r. }
+    apply red_terms_ws_cumul_pb_terms in Hl0, Hl0'.
+    etransitivity.
+    - eapply ws_cumul_pb_mkApps.
+      + refine (ws_cumul_pb_refl' (exist Γ Rclosed) (exist (tConst c ui) _)); eauto.
+      + eassumption.
+    - cbn. etransitivity; try apply X.
+      eapply ws_cumul_pb_mkApps.
+      + refine (ws_cumul_pb_refl' (exist Γ Rclosed) (exist (tConst c ui') _)); eauto.
+      + symmetry. eassumption.
+  Defined.
+
   Lemma ws_cumul_pb_Construct {pb Γ i k ui ui' l l'} :
   [× cumul_Construct_univ Σ pb i k #|l| ui ui',
      is_closed_context Γ & ws_cumul_pb_terms Σ Γ l l'] ->
@@ -4049,7 +4081,12 @@ Proof.
     repeat match goal with H : ?x = true |- _ => change (is_true x) in H end.
     solve_all.
   - intros. econstructor 1; eauto. destruct pb; subst; econstructor; eauto.
-  - intros. econstructor 1; eauto. destruct pb; subst; econstructor; eauto.
+  - intros Γ c u u' args args' H X X_dep H0 H1 H2.
+    eapply ws_cumul_pb_Const; eauto. split; eauto.
+    rewrite on_free_vars_mkApps in H1. rewrite on_free_vars_mkApps in H2.
+    repeat toProp; destruct_head'_and.
+    repeat match goal with H : ?x = true |- _ => change (is_true x) in H end.
+    solve_all.
   Unshelve. all: eauto.
 Defined.
 

@@ -57,6 +57,15 @@ Qed.
 
  *)
 
+(* Keep the executable gate separate from abstract-environment plumbing, so
+   its exact application-spine boundary can also be tested on direct terms. *)
+Definition array_instance_exception_gen lookup array c
+    (u u' : Instance.t) (π π' : stack) : bool :=
+  primitive_arrayb_gen lookup array c &&
+  (#|(decompose_stack π).1| == 1) &&
+  (#|(decompose_stack π').1| == 1) &&
+  (#|u| == #|u'|).
+
 Section Conversion.
 
   Context {cf : checker_flags} {nor : normalizing_flags}.
@@ -523,7 +532,9 @@ Section Conversion.
     eapply R_aux_stateR. all: simpl. all: auto.
   Qed.
 
-  Definition abstract_env_compare_global_instance := compare_global_instance (abstract_env_lookup X) (abstract_env_compare_universe X).
+  Definition abstract_env_compare_global_instance :=
+    compare_global_instance (abstract_env_lookup X)
+      (abstract_primitive_constant X primArray) (abstract_env_compare_universe X).
 
   Notation eqb_ctx := (eqb_ctx_upto (abstract_env_compare_universe X) (abstract_env_compare_sort X) abstract_env_compare_global_instance Conv).
   Notation cmpb_term_napp := (eqb_term_upto_univ_napp (abstract_env_compare_universe X) (abstract_env_compare_sort X) abstract_env_compare_global_instance).
@@ -1409,6 +1420,13 @@ Qed.
     all: solve_all; eapply wf_universe_iff; intros ? ->%LevelExprSet.singleton_spec; auto.
   Qed.
 
+  (* [decompose_stack] stops at the first non-application frame. Rocq's
+     primitive-array exception concerns exactly these immediate arguments,
+     not all applications occurring elsewhere in the zipper. *)
+  Definition array_instance_exception c (u u' : Instance.t) (π π' : stack) : bool :=
+    array_instance_exception_gen (abstract_env_lookup X)
+      (abstract_primitive_constant X primArray) c u u' π π'.
+
   Lemma compare_universe_variance_complete Σ (wfΣ : abstract_env_ext_rel X Σ) pb v u u' :
     wf_level Σ u ->
     wf_level Σ u' ->
@@ -1494,12 +1512,44 @@ Qed.
   Ltac specialize_Σ wfΣ :=
     repeat match goal with | h : _ |- _ => specialize (h _ wfΣ) end.
 
+  Lemma typed_registered_array_spine Σ (wfΣ : abstract_env_ext_rel X Σ)
+    Γ c u args T :
+    primitive_arrayb Σ c = true ->
+    Σ ;;; Γ |- mkApps (tConst c u) args : T -> #|args| <= 1.
+  Proof using Type.
+    intros ha typ. destruct (hΣ _ wfΣ) as [wΣ].
+    have hs := primitive_arrayb_gen_spec (lookup_env Σ)
+      (primitive_constant Σ primArray) c.
+    rewrite ha in hs. inversion hs as [[reg [decl [look inv]]]|].
+    destruct inv as [ht hb hu].
+    apply PCUICValidity.inversion_mkApps in typ as [A [ty sp]].
+    apply inversion_Const in ty as [decl' [wfΓ [hd [cons cum]]]]; auto.
+    have hd' : lookup_env Σ c = Some (ConstantDecl decl').
+    { exact (@declared_constant_to_gen cf _ _ Σ c decl' wΣ hd). }
+    rewrite look in hd'. inversion hd'; subst decl'.
+    have hc : Σ ;;; Γ |- tConst c u : (cst_type decl)@[u].
+    { econstructor; eauto. }
+    eapply PCUICSpine.typing_spine_strengthen in sp; eauto.
+    2: now apply PCUICValidity.validity in hc.
+    rewrite ht in sp. cbn in sp.
+    destruct args as [|arg args]; first (cbn; lia).
+    match type of sp with
+    | PCUICArities.typing_spine _ _ (tProd ?na ?dom ?cod) _ _ =>
+      eapply (PCUICSpine.typing_spine_inv
+        (Δ := [vass na dom]) (T := cod)
+        (args := [arg]) (args' := args) eq_refl) in sp as [args_sub [_ sp]]
+    end.
+    cbn in sp. depelim sp; cbn; try lia.
+    now apply ws_cumul_pb_Sort_Prod_inv in w.
+  Qed.
+
   Equations(noeqns) unfold_constants (Γ : context) (leq : conv_pb)
             (c : kername) (u : Instance.t) (π1 : stack)
             (h1 : wtp Γ (tConst c u) π1)
             (c' : kername) (u' : Instance.t) (π2 : stack)
             (h2 : wtp Γ (tConst c' u') π2)
-            (ne : c <> c' \/ (c = c' /\ ~eqb_universe_instance u u'))
+            (ne : c <> c' \/ (c = c' /\
+              ~(eqb_universe_instance u u' || array_instance_exception c u u' π1 π2)))
             (hx : conv_stack_ctx Γ π1 π2)
             (aux : Aux Term Γ (tConst c u) π1 (tConst c' u') π2 h2)
     : ConversionResult (conv_term leq Γ (tConst c u) π1 (tConst c' u') π2) :=
@@ -1651,13 +1701,39 @@ Qed.
     destruct ne as [|(_&ne)]; [congruence|].
 
     clear aux. specialize (h1 _ wfΣ). specialize (h2 _ wfΣ).
+    pose proof h1 as typed1.
     apply welltyped_zipc_tConst_inv in h1 as (cst1&decl1&cons1); eauto.
     apply welltyped_zipc_tConst_inv in h2 as (cst2&decl2&cons2); eauto.
     unshelve eapply declared_constant_to_gen in decl1, decl2; eauto.
     eapply declared_constant_inj in decl1; eauto; subst.
     apply consistent_instance_ext_wf in cons1.
     apply consistent_instance_ext_wf in cons2.
-    eapply eqb_universe_instance_complete in c1; auto.
+    have ordinary : cmp_universe_instance (eq_universe Σ) u u' -> False.
+    { intro hu. apply ne. apply/orP; left.
+      eapply eqb_universe_instance_complete; eauto. }
+    case ha: (primitive_arrayb Σ c).
+    - unfold cmp_global_instance_gen, global_variance_gen in c1.
+      rewrite ha in c1. cbn in c1.
+      destruct x1 as [|arg args]; first exact (ordinary c1).
+      cbn in c1.
+      eapply welltyped_zipc_zipp in typed1; eauto.
+      destruct typed1 as [T ht]. rewrite zipp_as_mkApps in ht.
+      have hn := typed_registered_array_spine Σ wfΣ _ _ _ _ _ ha ht.
+      have hl1 := All2_length a.
+      have hl2 := All2_length a0.
+      have hl := All2_length a1.
+      cbn in hl1, hl.
+      have hn1 : #|(decompose_stack π1).1| = 1 by lia.
+      have hn2 : #|(decompose_stack π2).1| = 1 by lia.
+      apply ne. apply/orP; right. unfold array_instance_exception, array_instance_exception_gen.
+      have ha' : primitive_arrayb_gen (abstract_env_lookup X)
+        (abstract_primitive_constant X primArray) c = true.
+      { unfold primitive_arrayb_gen in *.
+        rewrite (abstract_primitive_constant_correct X primArray Σ wfΣ).
+        rewrite <- (abstract_env_lookup_correct' X c wfΣ). exact ha. }
+      rewrite ha' hn1 hn2 /= c1. apply eqb_refl.
+    - apply ordinary. unfold cmp_global_instance_gen, global_variance_gen in c1.
+      rewrite ha in c1. exact c1.
   Qed.
   (* Why Solve All Obligations is not working here ??? *)
   Next Obligation. solve_unfold_constants aux eq1 eq2 Σ wfΣ. Defined.
@@ -2674,7 +2750,10 @@ Qed.
       cmp_global_instance Σ (compare_universe Σ) pb ref n l l' <->
       abstract_env_compare_global_instance pb ref n l l'.
   Proof.
-    intros hl hl'. apply reflect_iff. eapply reflect_cmp_global_instance; eauto.
+    intros hl hl'.
+    unfold abstract_env_compare_global_instance.
+    rewrite (abstract_primitive_constant_correct X primArray Σ wfΣ).
+    apply reflect_iff. eapply reflect_cmp_global_instance; eauto.
     all: try rewrite -> wf_universeb_instance_forall.
     - intros ? ? Hu Hu'; apply iff_reflect; apply (abstract_env_compare_universe_correct _ wfΣ).
       all: now apply wf_universe_iff.
@@ -3388,7 +3467,8 @@ Equations (noeqns) isconv_array_values_aux
     | prog_view_App _ _ _ _ := False_rect _ _;
 
     | prog_view_Const c u c' u' with eq_dec c c' := {
-      | left eq1 with inspect (eqb_universe_instance u u') := {
+      | left eq1 with inspect
+          (eqb_universe_instance u u' || array_instance_exception c u u' π1 π2) := {
         | @exist true eq2 with isconv_args_raw leq (tConst c u) π1 (tConst c' u') π2 aux := {
           | Success h := yes ;
           (* Unfold both constants at once *)
@@ -3623,19 +3703,32 @@ Equations (noeqns) isconv_array_values_aux
     simpl. constructor.
   Qed.
   Next Obligation.
-    rename H into wfΣ; destruct (hΣ _ wfΣ). clear aux.
+    rename H into wfΣ; destruct (hΣ _ wfΣ) as [wΣ]. clear aux.
     specialize_Σ wfΣ.
-    apply conv_cum_zipp; auto.
-    constructor. eapply ws_cumul_eq_pb.
-    constructor. all:fvs.
-    - destruct h. eapply welltyped_zipc_zipp in h1; auto. fvs.
-    - constructor. eapply eqb_universe_instance_spec; eauto.
-      + eapply welltyped_zipc_tConst_inv in h1 as (?&?&?); eauto;
-        eapply Forall_forallb; try eapply consistent_instance_wf_sort; eauto.
-        intros; apply wf_universe_iff; eauto.
-      + eapply welltyped_zipc_tConst_inv in h2 as (?&?&?); eauto;
-        eapply Forall_forallb; try eapply consistent_instance_wf_sort; eauto.
-        intros; apply wf_universe_iff; eauto.
+    rewrite !zipp_as_mkApps. destruct h.
+    constructor. eapply (ws_cumul_pb_Const Σ wΣ). split.
+    - symmetry in eq2. apply Bool.orb_true_iff in eq2 as [hu|ha].
+      + apply cmp_instance_opt_variance.
+        eapply eqb_universe_instance_spec; eauto.
+        * eapply welltyped_zipc_tConst_inv in h1 as (?&?&?); eauto;
+          eapply Forall_forallb; try eapply consistent_instance_wf_sort; eauto.
+          intros; apply wf_universe_iff; eauto.
+        * eapply welltyped_zipc_tConst_inv in h2 as (?&?&?); eauto;
+          eapply Forall_forallb; try eapply consistent_instance_wf_sort; eauto.
+          intros; apply wf_universe_iff; eauto.
+      + unfold array_instance_exception, array_instance_exception_gen in ha.
+        apply andb_prop in ha as [ha hlen].
+        apply andb_prop in ha as [ha hn2].
+        apply andb_prop in ha as [ha hn1].
+        apply ReflectEq.eqb_eq in hlen, hn1, hn2.
+        have hc : primitive_arrayb Σ c' = true.
+        { unfold primitive_arrayb_gen in *.
+          rewrite <- (abstract_primitive_constant_correct X primArray Σ wfΣ).
+          rewrite (abstract_env_lookup_correct' X c' wfΣ). exact ha. }
+        unfold cmp_global_instance_gen, global_variance_gen.
+        rewrite hc hn1. exact hlen.
+    - eapply welltyped_zipc_zipp in h1; auto. fvs.
+    - assumption.
   Qed.
   Next Obligation.
     pose (heΣ _ wfΣ). specialize_Σ wfΣ. sq.
@@ -6041,6 +6134,10 @@ Qed.
          apply ssrbool.not_false_is_true. rewrite noteq. cbn.
          eapply compare_global_instance_correct; eauto.
          }
+    8: { destruct conv_hds as [H].
+         inversion H; subst; clear H.
+         inversion s2; subst; clear s2.
+         destruct hdiscr. }
     all: apply conv_cum_alt in conv_hds as [(?&?&[r1 r2 ?])]; auto.
     all: eapply whnf_red_inv in r1; auto.
     all: inversion r1; subst; clear r1.
